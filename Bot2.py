@@ -1,6 +1,15 @@
-import random
+from random import choice, randint
+from itertools import islice
+import logging
 
-from telegram import Update, Bot, ChatMember, Poll
+from telegram import (
+    Update,
+    Bot,
+    Chat,
+    ChatMember, 
+    Poll
+)
+from telegram.constants import ParseMode
 from telegram.ext import(
     Application,
     ContextTypes,
@@ -9,6 +18,18 @@ from telegram.ext import(
     PollAnswerHandler,
     ChatMemberHandler
 )
+
+## Código copiado y pegado del ejemplo
+# Enable logging
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
+)
+# set higher logging level for httpx to avoid all GET and POST requests being logged
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
+logger = logging.getLogger(__name__)
+
+
 
 TOKEN = '7760476240:AAF8Yz-HVPmvLpPKBOxyCxay8HsQMQZgdBA'
 
@@ -26,8 +47,8 @@ def main():
     bot.add_handler(CommandHandler("regme", registerplayer))
     bot.add_handler(CommandHandler("unregme", unregisterplayer))
     bot.add_handler(CommandHandler("start", start_game))
-    bot.add_handler(CommandHandler("start", start_game))
     bot.add_handler(CommandHandler("p", jugar_palabra))
+    bot.add_handler(PollAnswerHandler(recibir_resultados_encuesta))
     # bot.add_handler(ChatMemberHandler())
 
 async def mostrar_ayuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -51,7 +72,7 @@ async def unregisterplayer(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if user.id in players:
             players.remove(user.id)
-            await context.bot.send_message(chat_id, ''.join(["El jugador ", user.full_name, " se ha quitado del juego"]))
+            await context.bot.send_message(chat_id, f"El jugador {user.full_name} se ha quitado del juego")
 
 async def start_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -61,19 +82,27 @@ async def start_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if adm.status == ChatMember.ADMINISTRATOR:
         game_running = True
-        await inicializar_juego(context.bot)
+        await inicializar_juego(context.bot, update.effective_chat)
     else:
         await context.bot.send_message(chat_id, "Solo un administrador puede iniciar el juego")
 
 
 def elegir_palabra() -> str:
-    pass
+    data = open("./words.txt", 'r')
+    cant = int(data.readline())
+    nlinea = randint(0, cant-1)
 
-async def inicializar_juego(bot: Bot):
-    impostor = random.choice(players)
+    palabra = islice(data, nlinea, nlinea + 1).__next__()[:-1]
+    
+    return palabra
+
+async def inicializar_juego(bot: Bot, chat: Chat):
+    impostor = choice(players)
     vivos.copy(players)
 
     await susurrar_palabras(bot, elegir_palabra())
+
+    await bot.send_message(chat, "Ahora cada uno puede decir su palabra")
 
     jugadas.clear()
 
@@ -96,15 +125,62 @@ async def jugar_palabra(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif not user.id in jugadas: # si el usuario que envió el mensaje no ha jugado todavía
         palabra = context.args[0]
         jugadas[user.id] = palabra
-        await context.bot.send_message(chat_id, user.full_name + " dijo: '" + palabra + "'")
-    else:
-        await context.bot.send_message(chat_id, user.full_name + ", ya jugaste una palabra en esta ronda")
+        await context.bot.send_message(chat_id, f"{user.full_name} dijo: '{palabra}'")
 
-async def enviar_encuesta(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await revisar_fin_ronda(context, update.effective_chat)
+    else:
+        await context.bot.send_message(chat_id, f"{user.full_name}, ya jugaste una palabra en esta ronda")
+
+async def revisar_fin_ronda(context: ContextTypes.DEFAULT_TYPE, chat: Chat):
+    if len(vivos) == len(jugadas.keys()):
+        await enviar_votacion(context, chat)
+        jugadas.clear()
+
+async def enviar_votacion(context: ContextTypes.DEFAULT_TYPE, chat: Chat):
+    miembros = [await chat.get_member(id) for id in vivos]
+    
     votacion = await context.bot.send_poll(
-        update.effective_chat.id,
+        chat.id,
         "¿Quién crees que es el impostor?",
-        [await update.effective_chat.get_member(id) for id in vivos],
+        miembros,
         type=Poll.REGULAR,
         open_period=60
     )
+
+    info_votacion = {
+        votacion.poll.id: {
+            'message_id': votacion.id,
+            'chat_id': chat.id,
+            'candidatos': miembros
+        }
+    }
+
+    context.bot_data.update(info_votacion)
+
+async def recibir_resultados_encuesta(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    resultados = update.poll_answer
+    votos = {id: 0 for id in vivos}
+
+    # votacion = context.bot_data[resultados.poll_id]
+    # try:
+
+    lista_votos = resultados.option_ids
+
+    for voto in lista_votos:
+        votos[voto] += 1
+    
+    # Sacar el jugador más votado
+    mas_votado = 0, 0
+    for player in votos:
+        if votos[player] > mas_votado[1]:
+            mas_votado = player, votos[player]
+    
+    # Si acumula al menos la mitad de los votos, expulsarlo
+    if mas_votado[1] > len(votos) / 2:
+        vivos.remove(mas_votado[0])
+        chat = update.effective_chat
+        await context.bot.send_message(
+            chat, f"El jugador {await chat.get_member(mas_votado[0]).mention_html()} ha sido expulsado del juego",
+            parse_mode=ParseMode.HTML
+        )
+    
