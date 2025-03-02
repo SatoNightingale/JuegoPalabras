@@ -18,6 +18,7 @@ from telegram.ext import(
     filters,
     CommandHandler,
     MessageHandler,
+    PrefixHandler,
     PollAnswerHandler,
 )
 
@@ -38,12 +39,17 @@ TOKEN = '7760476240:AAF8Yz-HVPmvLpPKBOxyCxay8HsQMQZgdBA'
 # Contiene la información de cada grupo, mapeada según el id de cada chat en el que está el bot
 grupos = {}
 
-# players = [] # la lista de id's de jugadores
-# impostor = -1 # El id del jugador que será el impostor
-# jugadas = {} # la lista de palabras jugadas por cada jugador en la ronda actual
-# vivos = [] # la lista de id's de jugadores que no han sido eliminados en la ronda
-# rondas = [] # la lista de rondas, donde se guarda cada jugada de cada jugador
-# game_running = False # si el juego está corriendo o no
+class juego:
+    grupo_id: int
+    players = [] # la lista de id's de jugadores
+    impostor: int # El id del jugador que será el impostor
+    jugadas = {} # la lista de palabras jugadas por cada jugador en la ronda actual
+    vivos = [] # la lista de id's de jugadores que no han sido eliminados en la ronda
+    rondas = [] # la lista de rondas, donde se guarda cada jugada de cada jugador
+    game_running = False # si el juego está corriendo o no
+
+    def __init__(self, grupo_id):
+        self.grupo_id = grupo_id
 
 class causas_victoria(Enum):
     IMPOSTOR_EXPULSADO = 1 # ganan jugadores
@@ -55,40 +61,66 @@ def main():
     bot = Application.builder().token(TOKEN).build()
 
     bot.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, nuevo_grupo))
-    bot.add_handler(CommandHandler("help", mostrar_ayuda))
+    bot.add_handler(CommandHandler("ayuda", mostrar_ayuda))
+    bot.add_handler(PrefixHandler('/', "ayuda", mostrar_ayuda, ~filters.UpdateType.EDITED_MESSAGE))
+    bot.add_handler(PrefixHandler('/', "regme", registerplayer, ~filters.UpdateType.EDITED_MESSAGE))
+    bot.add_handler(PrefixHandler('/', "unregme", unregisterplayer, ~filters.UpdateType.EDITED_MESSAGE))
+    bot.add_handler(PrefixHandler('/', "iniciar", start_game, ~filters.UpdateType.EDITED_MESSAGE))
+    bot.add_handler(PrefixHandler('/', "d", jugar_palabra, ~filters.UpdateType.EDITED_MESSAGE))
+    bot.add_handler(PrefixHandler('/', "jugadores", listar_jugadores, ~filters.UpdateType.EDITED_MESSAGE))
+    bot.add_handler(PrefixHandler('/', "jugadas", listar_rondas, ~filters.UpdateType.EDITED_MESSAGE))
     bot.add_handler(CommandHandler("regme", registerplayer))
     bot.add_handler(CommandHandler("unregme", unregisterplayer))
     bot.add_handler(CommandHandler("iniciar", start_game))
-    bot.add_handler(CommandHandler("d", jugar_palabra))
+    # bot.add_handler(CommandHandler("d", jugar_palabra))
     bot.add_handler(CommandHandler("jugadores", listar_jugadores))
     bot.add_handler(CommandHandler("jugadas", listar_rondas))
     bot.add_handler(PollAnswerHandler(recibir_resultados_encuesta))
 
     bot.run_polling(allowed_updates=Update.ALL_TYPES)
 
+def grupo_registrado(chat_id):
+    if not chat_id in grupos:
+        # game = juego(chat_id)
+        grupos[chat_id] = {
+            'players': [],
+            'game_running': False
+        }
+
 async def nuevo_grupo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for member in update.message.new_chat_members:
         if member.username == context.bot.username:
             # Si me acaban de añadir a este grupo, registrar su id
-            grupos[update.effective_chat.id] = {
-                'players': [],
-                'game_running': False
-            }
+            # grupos[update.effective_chat.id] = {
+            #     'players': [],
+            #     'game_running': False
+            # }
+            grupo_registrado(update.effective_chat.id)
             context.bot_data.update(grupos)
             break
 
 async def mostrar_ayuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(update.effective_chat.id,
-                                   """El juego de las palabras
-                                    Cómo se juega:
-                                        Se juega con al menos tres jugadores, de los cuales uno es el 'impostor'. El bot pone una palabra y se la dice por privado a cada jugador, menos al impostor. Luego, en cada ronda los jugadores deben enviar (con el comando /d) una palabra (y solo una) que esté relacionada con la palabra en juego, y al final de la ronda hay una votación donde los jugadores deben determinar a su juicio quién es el impostor. El jugador que reciba al menos la mitad de los votos se expulsa de la partida, si este resulta ser el impostor la partida termina y este pierde; si no es así, entonces se procede a otra ronda, a menos que queden solo dos jugadores, en cuyo caso el impostor habría ganado. El impostor también puede ganar la partida si dice la palabra en juego.
-                                    """
-                                   )
+    """Cómo se juega:
+
+Debe haber al menos tres jugadores, de los cuales uno es el <i>impostor</i>. El bot pone una palabra y se la dice por privado a cada jugador, menos al impostor. Luego, en cada ronda los jugadores deben enviar (con el comando /d) una palabra (<strong>y solo una</strong>) que esté relacionada con la palabra en juego, y al final de la ronda hay una votación donde los jugadores deben determinar a su juicio quién es el impostor. El jugador que reciba al menos la mitad de los votos es expulsado de la partida, si este resulta ser el impostor la partida termina y este pierde; si no es así, entonces se procede a otra ronda, a menos que queden solo dos jugadores, en cuyo caso el impostor habría ganado. El impostor también puede ganar la partida si dice la palabra en juego.
+
+Comandos permitidos:
+/ayuda - Muestra este mensaje
+/regme - Registrarse para el próximo juego
+/unregme - Cancelar el registro
+/iniciar - Iniciar el juego (Solo puede ejecutarlo un admin)
+/d <code>&lt;palabra&gt;</code> - Jugar una palabra, escrita a continuación del comando (solo puede ser una)
+/jugadores - listar todos los jugadores activos en esta ronda
+/jugadas - listar todas las palabras jugadas en cada ronda
+""",
+parse_mode=ParseMode.HTML)
 
 async def registerplayer(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not grupos[update.effective_chat.id]['game_running']:
+    chat_id = update.effective_chat.id
+    grupo_registrado(chat_id)
+    if not grupos[chat_id]['game_running']:
         user_id = update.effective_user.id
-        chat_id = update.effective_chat.id
 
         if not user_id in grupos[chat_id]['players']:
             grupos[chat_id]['players'].append(update.effective_user.id)
@@ -98,6 +130,7 @@ async def registerplayer(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def unregisterplayer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
+    grupo_registrado(chat_id)
     if not grupos[chat_id]['game_running']:
         user = update.effective_user
 
@@ -109,6 +142,8 @@ async def unregisterplayer(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def start_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
+    grupo_registrado(chat_id)
+
     if not grupos[chat_id]['game_running']:
         user = update.effective_user
 
@@ -142,7 +177,7 @@ async def inicializar_juego(bot: Bot, chat: Chat):
     # 'game_running': False
 
     juego['impostor'] = choice(juego['players'])
-    juego['vivos'] = [].copy(juego['players'])
+    juego['vivos'] = juego['players'].copy()
 
     juego['palabra'] = elegir_palabra()
 
@@ -151,7 +186,7 @@ async def inicializar_juego(bot: Bot, chat: Chat):
 
     await susurrar_palabras(chat.id, bot, juego['palabra'])
 
-    await bot.send_message(chat, "Que empiece el juego. Cada uno puede decir su palabra")
+    await bot.send_message(chat.id, "Que empiece el juego. Cada uno puede decir su palabra")
 
     # jugadas.clear()
 
@@ -165,13 +200,15 @@ async def susurrar_palabras(chat_id, bot: Bot, palabra):
             await bot.send_message(player, "¡Eres el impostor!")
 
 async def jugar_palabra(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    grupo_registrado(chat_id)
+
     if not grupos[update.effective_chat.id]['game_running']:
         await update.message.reply_text("Comando inválido, no se ha iniciado un juego.")
         return
 
     await update.effective_message.delete()
     user = update.effective_user
-    chat_id = update.effective_chat.id
 
     if user.id in grupos[chat_id]['vivos']: # Si el usuario es uno de los jugadores activos
         if len(context.args) > 1:
@@ -227,6 +264,8 @@ async def enviar_votacion(context: ContextTypes.DEFAULT_TYPE, chat: Chat):
     # context.bot_data.update(info_votacion)
 
 async def recibir_resultados_encuesta(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    grupo_registrado(update.effective_chat.id)
+
     if not grupos[update.effective_chat.id]['game_running']:
         return
 
@@ -304,6 +343,8 @@ async def lista_jugadores_html(chat: Chat) -> str:
     ])
 
 async def listar_jugadores(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    grupo_registrado(update.effective_chat.id)
+
     if not grupos[update.effective_chat.id]['game_running']:
         update.message.reply_text("Comando inválido, no se ha iniciado un juego")
         return
@@ -316,6 +357,7 @@ async def listar_jugadores(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
 async def listar_rondas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
+    grupo_registrado(chat_id)
     juego = grupos[chat_id]
     
     if not juego['game_running']:
@@ -341,8 +383,6 @@ async def listar_rondas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     context.bot.send_message(chat_id, "Las palabras jugadas hasta ahora han sido:<br>" + mensaje, parse_mode=ParseMode.HTML)
             
-
-
 
 
 if __name__ == '__main__':
