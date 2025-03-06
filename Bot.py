@@ -8,10 +8,10 @@ from telegram import (
     Bot,
     Chat,
     User,
-    ChatMember, 
-    Poll,
+    ChatMember,
 )
 from telegram.constants import ParseMode
+from telegram.error import BadRequest
 from telegram.ext import(
     Application,
     ContextTypes,
@@ -123,8 +123,13 @@ async def registerplayer(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
 
         if not user_id in grupos[chat_id]['players']:
-            grupos[chat_id]['players'].append(update.effective_user.id)
-            await context.bot.send_message(chat_id, f"{update.effective_user.mention_html()} ha sido registrado para jugar El juego de las palabras", parse_mode=ParseMode.HTML)
+            # Aquí hay que revisar si el usuario inició el chat con el bot
+            try:
+                await context.bot.send_message(update.effective_user.id, f"Has sido registrado para jugar El juego de las palabras en el grupo {update.effective_chat.mention_html()}", parse_mode=ParseMode.HTML)
+                grupos[chat_id]['players'].append(update.effective_user.id)
+                await context.bot.send_message(chat_id, f"{update.effective_user.mention_html()} ha sido registrado para jugar El juego de las palabras", parse_mode=ParseMode.HTML)
+            except BadRequest:
+                await update.message.reply_text("¡Parece que no has iniciado una conversación conmigo! Para unirte a un juego, primero debes hablarme. Pulsa aquí: " + context.bot.link)
         else:
             await update.message.reply_text("¡Ya estás registrado!")
 
@@ -244,7 +249,8 @@ async def revisar_fin_ronda(context: ContextTypes.DEFAULT_TYPE, chat: Chat):
 
 async def enviar_votacion(context: ContextTypes.DEFAULT_TYPE, chat: Chat):
     miembros = [await chat.get_member(id).user.first_name for id in grupos[chat.id]['vivos']]
-    
+    miembros.append('Paso')
+
     votacion = await context.bot.send_poll(
         chat.id,
         "¿Quién crees que es el impostor?",
@@ -282,7 +288,11 @@ async def recibir_voto(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # En teoría lista_votos es una tupla, pero solo se permitirá un voto
     if len(lista_votos) > 0:
-        votacion['votos'][id_votante] = grupos[update.effective_chat.id]['vivos'][lista_votos[0]]
+        # El ultimo valor de votacion['candidatos'] es 'Paso', su indice es len() - 1
+        if lista_votos[0] != len(votacion['candidatos']) - 1:
+            votacion['votos'][id_votante] = grupos[update.effective_chat.id]['vivos'][lista_votos[0]]
+        else: # Si la respuesta es igual al último valor, entonces votó por 'Paso'
+            votacion['votos'][id_votante] = 0
     else: # Si el usuario retractó su voto, entonces la lista_votos está vacía
         votacion['votos'][id_votante] = -1
 
@@ -399,7 +409,9 @@ async def listar_rondas(update: Update, context: ContextTypes.DEFAULT_TYPE):
             mensaje += lista_jugadores
     
     context.bot.send_message(chat_id, "Las palabras jugadas hasta ahora han sido:<br>" + mensaje, parse_mode=ParseMode.HTML)
-            
+
+async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.error("Error:", exc_info=context.error)
 
 
 if __name__ == '__main__':
