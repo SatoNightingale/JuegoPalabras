@@ -75,7 +75,7 @@ def main():
     # bot.add_handler(CommandHandler("d", jugar_palabra))
     bot.add_handler(CommandHandler("jugadores", listar_jugadores))
     bot.add_handler(CommandHandler("jugadas", listar_rondas))
-    bot.add_handler(PollAnswerHandler(recibir_resultados_encuesta))
+    bot.add_handler(PollAnswerHandler(recibir_voto))
 
     bot.run_polling(allowed_updates=Update.ALL_TYPES)
 
@@ -243,65 +243,82 @@ async def revisar_fin_ronda(context: ContextTypes.DEFAULT_TYPE, chat: Chat):
         # jugadas.clear()
 
 async def enviar_votacion(context: ContextTypes.DEFAULT_TYPE, chat: Chat):
-    miembros = [await chat.get_member(id) for id in grupos[chat.id]['vivos']]
+    miembros = [await chat.get_member(id).user.first_name for id in grupos[chat.id]['vivos']]
     
     votacion = await context.bot.send_poll(
         chat.id,
         "¿Quién crees que es el impostor?",
         miembros,
-        type=Poll.REGULAR,
-        open_period=60
+        is_anonymous=False
+        # type=Poll.REGULAR,
+        # open_period=60
     )
 
-    # info_votacion = {
-    #     votacion.poll.id: {
-    #         'message_id': votacion.id,
-    #         'chat_id': chat.id,
-    #         'candidatos': miembros
-    #     }
-    # }
+    info_votacion = {
+        votacion.poll.id: {
+            'message_id': votacion.id,
+            'chat_id': chat.id,
+            'candidatos': miembros,
+            # id votó por tal id
+            'votos': {id: -1 for id in grupos[chat.id]['vivos']}
+        }
+    }
 
-    # context.bot_data.update(info_votacion)
+    context.bot_data.update(info_votacion)
 
-async def recibir_resultados_encuesta(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def recibir_voto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     grupo_registrado(update.effective_chat.id)
 
     if not grupos[update.effective_chat.id]['game_running']:
         return
 
-    resultados = update.poll_answer
-    # votos = {id: 0 for id in grupos[update.effective_chat.id]['vivos']}
+    respuesta = update.poll_answer
+    # update.poll.options[0]
+    # update.poll.total_voter_count
+    votacion = context.bot_data[respuesta.poll_id]
 
-    # votacion = context.bot_data[resultados.poll_id]
-    # try:
+    lista_votos = respuesta.option_ids
+    id_votante = respuesta.user.id
 
-    lista_votos = resultados.option_ids
+    # En teoría lista_votos es una tupla, pero solo se permitirá un voto
+    if len(lista_votos) > 0:
+        votacion['votos'][id_votante] = grupos[update.effective_chat.id]['vivos'][lista_votos[0]]
+    else: # Si el usuario retractó su voto, entonces la lista_votos está vacía
+        votacion['votos'][id_votante] = -1
 
-    #TODO: Probar si esto sirve
-    votos = {id: lista_votos.count(id) for id in grupos[update.effective_chat.id]['vivos']}
+    context.bot_data.update(votacion)
 
-    # for voto in lista_votos:
-    #     votos[voto] += 1
-    
-    # Sacar el jugador más votado
-    mas_votado = 0, 0
-    for player in votos:
-        if votos[player] > mas_votado[1]:
-            mas_votado = player, votos[player]
-    
-    # Si acumula al menos la mitad de los votos, expulsarlo
-    if mas_votado[1] > len(votos) / 2:
-        chat = update.effective_chat
-        grupos[chat.id]['vivos'].remove(mas_votado[0])
-        await context.bot.send_message(
-            chat, f"El jugador {await chat.get_member(mas_votado[0]).mention_html()} ha sido expulsado del juego",
-            parse_mode=ParseMode.HTML
-        )
+    await check_encuesta_completa(update.effective_chat, votacion['votos'], context)
 
-        if mas_votado[0] == grupos[chat.id]['impostor']:
-            await desenlace(chat.id, context.bot, causas_victoria.IMPOSTOR_EXPULSADO)
-        elif len(grupos[chat.id]['vivos']) < 3:
-            await desenlace(chat.id, context.bot, causas_victoria.MIN_JUGADORES)
+async def check_encuesta_completa(chat: Chat, lista_votos: dict, context: ContextTypes.DEFAULT_TYPE):
+    if not -1 in lista_votos.values():
+        #TODO: Probar si esto sirve
+        # Tal id recibió tantos votos
+        votos = {id: lista_votos.values().count(id) for id in grupos[chat.id]['vivos']}
+
+        # for voto in lista_votos:
+        #     votos[voto] += 1
+        
+        # Sacar el jugador más votado
+        mas_votado = 0, 0 # id, votos
+        for player in votos:
+            if votos[player] > mas_votado[1]:
+                mas_votado = player, votos[player]
+        
+        # Si acumula al menos la mitad de los votos, expulsarlo
+        if mas_votado[1] > len(votos) / 2:
+            # chat = update.effective_chat
+            grupos[chat.id]['vivos'].remove(mas_votado[0])
+            await context.bot.send_message(
+                chat, f"Fin de la votación. El jugador {await chat.get_member(mas_votado[0]).mention_html()} ha sido expulsado del juego",
+                parse_mode=ParseMode.HTML
+            )
+
+            if mas_votado[0] == grupos[chat.id]['impostor']:
+                await desenlace(chat.id, context.bot, causas_victoria.IMPOSTOR_EXPULSADO)
+            elif len(grupos[chat.id]['vivos']) < 3:
+                await desenlace(chat.id, context.bot, causas_victoria.MIN_JUGADORES)
+
 
 
 # Casos de victoria:
