@@ -80,19 +80,19 @@ def main():
     bot.add_handler(CommandHandler("jugadas", listar_rondas))
     bot.add_handler(PollAnswerHandler(recibir_voto))
 
-    # port = os.environ.get('PORT')
+    port = os.environ.get('PORT')
 
-    # print(port)
+    print(port)
 
-    # bot.run_webhook(
-    #     listen='0.0.0.0',
-    #     port=port,
-    #     url_path='',
-    #     webhook_url=webhook_URL,
-    #     allowed_updates=Update.ALL_TYPES
-    # )
+    bot.run_webhook(
+        listen='0.0.0.0',
+        port=port,
+        url_path='',
+        webhook_url=webhook_URL,
+        allowed_updates=Update.ALL_TYPES
+    )
 
-    bot.run_polling(allowed_updates=Update.ALL_TYPES)
+    # bot.run_polling(allowed_updates=Update.ALL_TYPES)
 
 def grupo_registrado(chat_id):
     if not chat_id in grupos:
