@@ -2,6 +2,7 @@ from random import choice, randint
 from itertools import islice
 from enum import Enum
 import logging
+import os
 
 from telegram import (
     Update,
@@ -34,7 +35,7 @@ logger = logging.getLogger(__name__)
 
 
 
-TOKEN = '7760476240:AAF8Yz-HVPmvLpPKBOxyCxay8HsQMQZgdBA'
+webhook_URL = ''
 
 # Contiene la información de cada grupo, mapeada según el id de cada chat en el que está el bot
 grupos = {}
@@ -58,6 +59,8 @@ class causas_victoria(Enum):
 
 
 def main():
+    TOKEN = os.environ.get('TOKEN')
+
     bot = Application.builder().token(TOKEN).build()
 
     bot.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, nuevo_grupo))
@@ -77,7 +80,19 @@ def main():
     bot.add_handler(CommandHandler("jugadas", listar_rondas))
     bot.add_handler(PollAnswerHandler(recibir_voto))
 
-    bot.run_polling(allowed_updates=Update.ALL_TYPES)
+    port = os.environ.get('PORT')
+
+    print(port)
+
+    bot.run_webhook(
+        listen='0.0.0.0',
+        port=port,
+        url_path='',
+        webhook_url=webhook_URL,
+        allowed_updates=Update.ALL_TYPES
+    )
+
+    # bot.run_polling(allowed_updates=Update.ALL_TYPES)
 
 def grupo_registrado(chat_id):
     if not chat_id in grupos:
