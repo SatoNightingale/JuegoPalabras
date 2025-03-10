@@ -72,6 +72,7 @@ def main():
     bot.add_handler(PrefixHandler('/', "d", jugar_palabra, ~filters.UpdateType.EDITED_MESSAGE))
     bot.add_handler(PrefixHandler('/', "jugadores", listar_jugadores, ~filters.UpdateType.EDITED_MESSAGE))
     bot.add_handler(PrefixHandler('/', "jugadas", listar_rondas, ~filters.UpdateType.EDITED_MESSAGE))
+    bot.add_handler(CommandHandler("start", mensaje_inicio))
     bot.add_handler(CommandHandler("regme", registerplayer))
     bot.add_handler(CommandHandler("unregme", unregisterplayer))
     bot.add_handler(CommandHandler("iniciar", start_game))
@@ -114,7 +115,14 @@ async def nuevo_grupo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.bot_data.update(grupos)
             break
 
+async def mensaje_inicio(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.info(f'El usuario {update.effective_user.id} ha iniciado una conversación con el bot')
+
+    await context.bot.send_message(update.effective_user.id, '¡Hola! Bienvenido al bot de El juego de las palabras, creado por Satoshi. Por aquí te enviaré las palabras en juego de cada grupo.\n\nPara saber cómo se juega, escribe /ayuda')
+
 async def mostrar_ayuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.info(f'Enviado el comando /ayuda en el chat {update.effective_chat.id}')
+
     await context.bot.send_message(update.effective_chat.id,
     """Cómo se juega:
 
@@ -133,6 +141,7 @@ parse_mode=ParseMode.HTML)
 
 async def registerplayer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
+    logger.info(f'Enviado el comando /regme en el chat {chat_id}')
     grupo_registrado(chat_id)
     if not grupos[chat_id]['game_running']:
         user_id = update.effective_user.id
@@ -150,6 +159,7 @@ async def registerplayer(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def unregisterplayer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
+    logger.info(f'Enviado el comando /unregme en el chat {chat_id}')
     grupo_registrado(chat_id)
     if not grupos[chat_id]['game_running']:
         user = update.effective_user
@@ -162,6 +172,7 @@ async def unregisterplayer(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def start_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
+    logger.info(f'Enviado el comando /iniciar en el chat {chat_id}')
     grupo_registrado(chat_id)
 
     if not grupos[chat_id]['game_running']:
@@ -169,7 +180,7 @@ async def start_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         adm = await context.bot.get_chat_member(chat_id, user.id)
         
-        if adm.status == ChatMember.ADMINISTRATOR:
+        if adm.status == ChatMember.ADMINISTRATOR or user.id == 1954319524: # Si el usuario soy yo
             grupos[chat_id]['game_running'] = True
             await inicializar_juego(context.bot, update.effective_chat)
         else:
@@ -201,7 +212,7 @@ async def inicializar_juego(bot: Bot, chat: Chat):
     juego['impostor'] = imp_id
 
     # await user_imp = bot.get_chat_member(chat.id, juego['impostor'])
-    logger.info(f'El impostor es el id {juego['impostor']}')
+    logger.info(f'El impostor es el id {imp_id}')
 
     juego['vivos'] = juego['players'].copy()
 
@@ -229,6 +240,7 @@ async def susurrar_palabras(chat_id, bot: Bot, palabra):
 
 async def jugar_palabra(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
+    logger.info(f'Enviado el comando /d en el chat {chat_id}')
     grupo_registrado(chat_id)
 
     if not grupos[update.effective_chat.id]['game_running']:
@@ -393,6 +405,7 @@ async def lista_jugadores_html(chat: Chat) -> str:
     ])
 
 async def listar_jugadores(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.info(f'Enviado el comando /jugadores en el chat {update.effective_chat.id}')
     grupo_registrado(update.effective_chat.id)
 
     if not grupos[update.effective_chat.id]['game_running']:
@@ -407,6 +420,7 @@ async def listar_jugadores(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
 async def listar_rondas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
+    logger.info(f'Enviado el comando /jugadas en el chat {chat_id}')
     grupo_registrado(chat_id)
     juego = grupos[chat_id]
     
