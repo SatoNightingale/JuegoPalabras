@@ -212,13 +212,13 @@ async def inicializar_juego(bot: Bot, chat: Chat):
     juego['impostor'] = imp_id
 
     # await user_imp = bot.get_chat_member(chat.id, juego['impostor'])
-    logger.info(f'El impostor es el id {imp_id}')
+    logger.info(f"El impostor es el id {imp_id}")
 
     juego['vivos'] = juego['players'].copy()
 
     juego['palabra'] = elegir_palabra()
 
-    logger.info(f'La palabra es {juego['palabra']}')
+    logger.info(f"La palabra es {juego['palabra']}")
 
     juego['jugadas'] = {}
     juego['rondas'] = []
