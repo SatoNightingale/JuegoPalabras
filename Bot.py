@@ -388,7 +388,7 @@ async def listar_jugadores(update: Update, context: ContextTypes.DEFAULT_TYPE):
     grupo_registrado(update.effective_chat.id)
 
     if not grupos[update.effective_chat.id]['game_running']:
-        update.message.reply_text("Comando inválido, no se ha iniciado un juego")
+        await update.message.reply_text("Comando inválido, no se ha iniciado un juego")
         return
 
     chat = update.effective_chat
@@ -403,7 +403,7 @@ async def listar_rondas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     juego = grupos[chat_id]
     
     if not juego['game_running']:
-        update.message.reply_text("Comando inválido, no se ha iniciado un juego")
+        await update.message.reply_text("Comando inválido, no se ha iniciado un juego")
         return
 
     num_ronda = 1
@@ -423,7 +423,7 @@ async def listar_rondas(update: Update, context: ContextTypes.DEFAULT_TYPE):
             num_ronda += 1
             mensaje += lista_jugadores
     
-    context.bot.send_message(chat_id, "Las palabras jugadas hasta ahora han sido:<br>" + mensaje, parse_mode=ParseMode.HTML)
+    await context.bot.send_message(chat_id, "Las palabras jugadas hasta ahora han sido:<br>" + mensaje, parse_mode=ParseMode.HTML)
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.error("Error:", exc_info=context.error)
