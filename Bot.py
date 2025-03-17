@@ -202,6 +202,8 @@ async def start_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await inicializar_juego(context.bot, update.effective_chat)
         else:
             await context.bot.send_message(chat_id, "Solo un administrador puede iniciar el juego")
+    else:
+        update.message.reply_text("¡El juego ya empezó!")
 
 
 def elegir_palabra() -> str:
@@ -337,6 +339,7 @@ async def recibir_voto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # update.poll.options[0]
     # update.poll.total_voter_count
     votacion = context.bot_data[respuesta.poll_id]
+    logger.info("Se ha reaccionado a la encuesta " + str(respuesta.poll_id))
 
     if not votacion['open']:
         return
@@ -446,7 +449,7 @@ def lista_jugadores_html(chat: Chat) -> str:
         for player in grupos[chat.id]['players'].values()
     ])
 
-    logger.info("lista_jugadores_html: " + retorno)
+    # logger.info("lista_jugadores_html: " + retorno)
 
     return retorno
 
