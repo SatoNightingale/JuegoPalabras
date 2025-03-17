@@ -269,7 +269,8 @@ async def jugar_palabra(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         await update.effective_message.delete()
     except BadRequest:
-        logger.info(f'No se puede eliminar el mensaje {update.effective_message.id}')
+        pass
+        # logger.info(f'No se puede eliminar el mensaje {update.effective_message.id}')
 
     user = update.effective_user
 
@@ -296,7 +297,7 @@ async def jugar_palabra(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def revisar_fin_ronda(context: ContextTypes.DEFAULT_TYPE, chat: Chat):
     if len(grupos[chat.id]['vivos']) == len(grupos[chat.id]['jugadas'].keys()):
-        await context.bot.send_message(chat.id, "La ronda ha terminado. Los jugadores que quedan son:<br>" + lista_jugadores_html(chat), parse_mode=ParseMode.HTML)
+        await context.bot.send_message(chat.id, "La ronda ha terminado. Los jugadores que quedan son:\n" + lista_jugadores_html(chat), parse_mode=ParseMode.HTML)
 
         # registrar las palabras jugadas y limpiar el diccionario para la nueva ronda
         grupos[chat.id]['rondas'].append(grupos[chat.id]['jugadas'].copy())
@@ -428,7 +429,9 @@ def lista_jugadores_html(chat: Chat) -> str:
     #     if player not in grupos[chat.id]['vivos']:
     #         nombre_player = ''.join(['<del>', nombre_player,'</del>'])
     
-    retorno = '<br>'.join([
+
+    
+    retorno = '\n'.join([
         player.first_name if player.id in grupos[chat.id]['vivos']
         else '<del><i>' + player.first_name + '</i></del>'
         for player in grupos[chat.id]['players'].values()
@@ -470,7 +473,7 @@ async def listar_rondas(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Cada ronda es una lista de diccionarios
         for jugada in ronda:
             # Cada diccionario mapea un id de usuario y la palabra que dijo
-            lista_jugadores = 'Ronda: ' + str(num_ronda) + '<br>' + '<br>'.join([
+            lista_jugadores = 'Ronda: ' + str(num_ronda) + '\n' + '\n'.join([
                 get_player(chat_id, player).first_name + ": " + jugada[player]
                 if player.id in grupos[chat_id]['vivos']
                 else '<del><i>' + get_player(chat_id, player).first_name + ": " + jugada[player] + '</i></del>'
@@ -480,7 +483,7 @@ async def listar_rondas(update: Update, context: ContextTypes.DEFAULT_TYPE):
             num_ronda += 1
             mensaje += lista_jugadores
     
-    await context.bot.send_message(chat_id, "Las palabras jugadas hasta ahora han sido:<br>" + mensaje, parse_mode=ParseMode.HTML)
+    await context.bot.send_message(chat_id, "Las palabras jugadas hasta ahora han sido:\n" + mensaje, parse_mode=ParseMode.HTML)
 
 
 async def stop_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
