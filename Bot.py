@@ -3,6 +3,7 @@ from itertools import islice
 from enum import Enum
 import logging
 import os
+import asyncio
 
 from telegram import (
     Update,
