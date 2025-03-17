@@ -325,22 +325,28 @@ async def enviar_votacion(context: ContextTypes.DEFAULT_TYPE, chat: Chat):
             'chat_id': chat.id,
             'candidatos': miembros,
             # id votó por tal id, -1 significa que no ha votado por ninguna
-            'votos': {id: -1 for id in grupos[chat.id]['vivos']}
+            'votos': {id: -1 for id in grupos[chat.id]['vivos']},
+            'open': True
         }
     }
 
     context.bot_data.update(info_votacion)
 
 async def recibir_voto(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    grupo_registrado(update.effective_chat.id)
-
-    if not grupos[update.effective_chat.id]['game_running']:
-        return
-
     respuesta = update.poll_answer
     # update.poll.options[0]
     # update.poll.total_voter_count
     votacion = context.bot_data[respuesta.poll_id]
+
+    if not votacion['open']:
+        return
+
+    chat_id = votacion['chat_id']
+
+    grupo_registrado(chat_id)
+
+    if not grupos[chat_id]['game_running']:
+        return
 
     lista_votos = respuesta.option_ids
     id_votante = respuesta.user.id
@@ -349,21 +355,23 @@ async def recibir_voto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(lista_votos) > 0:
         # El ultimo valor de votacion['candidatos'] es 'Paso', su indice es len() - 1
         if lista_votos[0] != len(votacion['candidatos']) - 1:
-            votacion['votos'][id_votante] = grupos[update.effective_chat.id]['vivos'][lista_votos[0]]
+            votacion['votos'][id_votante] = grupos[chat_id]['vivos'][lista_votos[0]]
         else: # Si la respuesta es igual al último valor, entonces votó por 'Paso'
             votacion['votos'][id_votante] = 0
     else: # Si el usuario retractó su voto, entonces la lista_votos está vacía
         votacion['votos'][id_votante] = -1
 
+    votacion['open'] = await check_encuesta_completa(chat_id, votacion['votos'], context)
+
     context.bot_data.update(votacion)
 
-    await check_encuesta_completa(update.effective_chat, votacion['votos'], context)
-
-async def check_encuesta_completa(chat: Chat, lista_votos: dict, context: ContextTypes.DEFAULT_TYPE):
-    if not -1 in lista_votos.values():
+async def check_encuesta_completa(chat_id, lista_votos: dict, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    if -1 in lista_votos.values():
+        return False
+    else:
         #TODO: Probar si esto sirve
         # Tal id recibió tantos votos
-        votos = {id: lista_votos.values().count(id) for id in grupos[chat.id]['vivos']}
+        votos = {id: lista_votos.values().count(id) for id in grupos[chat_id]['vivos']}
 
         # for voto in lista_votos:
         #     votos[voto] += 1
@@ -376,18 +384,19 @@ async def check_encuesta_completa(chat: Chat, lista_votos: dict, context: Contex
         
         # Si acumula al menos la mitad de los votos, expulsarlo
         if mas_votado[1] > len(votos) / 2:
-            grupos[chat.id]['vivos'].remove(mas_votado[0])
+            grupos[chat_id]['vivos'].remove(mas_votado[0])
             await context.bot.send_message(
-                chat.id, f"Fin de la votación. El jugador {get_player(chat.id, mas_votado[0]).mention_html()} ha sido expulsado del juego", parse_mode=ParseMode.HTML
+                chat_id, f"Fin de la votación. El jugador {get_player(chat_id, mas_votado[0]).mention_html()} ha sido expulsado del juego", parse_mode=ParseMode.HTML
             )
 
-            if mas_votado[0] == grupos[chat.id]['impostor']:
-                await desenlace(chat.id, context.bot, causas_victoria.IMPOSTOR_EXPULSADO)
-            elif len(grupos[chat.id]['vivos']) < 3:
-                await desenlace(chat.id, context.bot, causas_victoria.MIN_JUGADORES)
+            if mas_votado[0] == grupos[chat_id]['impostor']:
+                await desenlace(chat_id, context.bot, causas_victoria.IMPOSTOR_EXPULSADO)
+            elif len(grupos[chat_id]['vivos']) < 3:
+                await desenlace(chat_id, context.bot, causas_victoria.MIN_JUGADORES)
         else:
-            await context.bot.send_message(chat.id, "Fin de la ronda. No se ha elegido por mayoría ningún jugador en la votación: todos pasan a la siguiente ronda")
-        
+            await context.bot.send_message(chat_id, "Fin de la ronda. No se ha elegido por mayoría ningún jugador en la votación: todos pasan a la siguiente ronda")
+
+        return True
         # TODO: Hay que implementar algo para que se cierre la encuesta, o por lo menos para que nuevos votos no afecten la ronda en curso después de la votación
 
 
