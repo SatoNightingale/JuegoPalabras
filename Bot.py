@@ -370,7 +370,6 @@ async def recibir_voto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.bot_data.update(votacion)
 
 async def check_encuesta_completa(chat_id, lista_votos: dict, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    # print()
     logger.info(str(lista_votos.values()))
     if -1 in list(lista_votos.values()):
         return False
