@@ -365,16 +365,17 @@ async def recibir_voto(update: Update, context: ContextTypes.DEFAULT_TYPE):
         votacion['votos'][id_votante] = -1
 
     votacion['open'] = await check_encuesta_completa(chat_id, votacion['votos'], context)
-
+    
     context.bot_data.update(votacion)
 
 async def check_encuesta_completa(chat_id, lista_votos: dict, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    if -1 in lista_votos.values():
+    print((lista_votos.values()))
+    if -1 in list(lista_votos.values()):
         return False
     else:
         #TODO: Probar si esto sirve
         # Tal id recibió tantos votos
-        votos = {id: lista_votos.values().count(id) for id in grupos[chat_id]['vivos']}
+        votos = {id: list(lista_votos.values()).count(id) for id in grupos[chat_id]['vivos']}
 
         # for voto in lista_votos:
         #     votos[voto] += 1
