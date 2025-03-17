@@ -33,7 +33,7 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 
 logger = logging.getLogger(__name__)
 
-
+# TODO: No funciona bot.get_chat_member ni delete_message si el bot no es administrador
 
 webhook_URL = 'https://juegopalabrasbot.onrender.com'
 
@@ -42,7 +42,7 @@ grupos = {}
 
 class juego:
     grupo_id: int
-    players = [] # la lista de id's de jugadores
+    players = {} # diccionario de User's de jugadores mapeados por su ID
     impostor: int # El id del jugador que será el impostor
     jugadas = {} # la lista de palabras jugadas por cada jugador en la ronda actual
     vivos = [] # la lista de id's de jugadores que no han sido eliminados en la ronda
@@ -79,7 +79,10 @@ def main():
     # bot.add_handler(CommandHandler("d", jugar_palabra))
     bot.add_handler(CommandHandler("jugadores", listar_jugadores))
     bot.add_handler(CommandHandler("jugadas", listar_rondas))
+    bot.add_handler(CommandHandler("finjuego", stop_game))
     bot.add_handler(PollAnswerHandler(recibir_voto))
+
+    bot.add_error_handler(error_handler)
 
     port = os.environ.get('PORT')
 
@@ -99,9 +102,16 @@ def grupo_registrado(chat_id):
     if not chat_id in grupos:
         # game = juego(chat_id)
         grupos[chat_id] = {
-            'players': [],
+            'players': {},
             'game_running': False
         }
+
+# Solo el diccionario 'players' contendrá la información de cada User, el resto de las referencias se harán por id para evitar la redundancia
+# PROBLEMA: 'players' es una lista o un diccionario? Posición o clave
+# Player es un diccionario que mapea cada id de jugador con su objeto User
+def get_player(chat_id, user_id) -> User:
+    """Devuelve el objeto User de un jugador registrado en la partida dado su Id de usuario en telegram, en el chat chat_id"""
+    return grupos[chat_id]['players'][user_id]
 
 async def nuevo_grupo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for member in update.message.new_chat_members:
@@ -116,7 +126,7 @@ async def nuevo_grupo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             break
 
 async def mensaje_inicio(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.info(f'El usuario {update.effective_user.id} ha iniciado una conversación con el bot')
+    logger.info(f'El usuario {update.effective_user.id}: {update.effective_user.full_name} ha iniciado una conversación con el bot')
 
     await context.bot.send_message(update.effective_user.id, '¡Hola! Bienvenido al bot de El juego de las palabras, creado por Satoshi. Por aquí te enviaré las palabras en juego de cada grupo.\n\nPara saber cómo se juega, escribe /ayuda')
 
@@ -142,16 +152,18 @@ parse_mode=ParseMode.HTML)
 async def registerplayer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     logger.info(f'Enviado el comando /regme en el chat {chat_id}')
+
     grupo_registrado(chat_id)
     if not grupos[chat_id]['game_running']:
-        user_id = update.effective_user.id
+        user = update.effective_user
 
-        if not user_id in grupos[chat_id]['players']:
+        if not user.id in grupos[chat_id]['players']:
             # Aquí hay que revisar si el usuario inició el chat con el bot
             try:
-                await context.bot.send_message(update.effective_user.id, f"Has sido registrado para jugar El juego de las palabras en el grupo {update.effective_chat.mention_html()}", parse_mode=ParseMode.HTML)
-                grupos[chat_id]['players'].append(update.effective_user.id)
-                await context.bot.send_message(chat_id, f"{update.effective_user.mention_html()} ha sido registrado para jugar El juego de las palabras", parse_mode=ParseMode.HTML)
+                await context.bot.send_message(user.id, f"Has sido registrado para jugar El juego de las palabras en el grupo {update.effective_chat.mention_html()}", parse_mode=ParseMode.HTML)
+                await context.bot.send_message(chat_id, f"{user.mention_html()} ha sido registrado para jugar El juego de las palabras", parse_mode=ParseMode.HTML)
+
+                grupos[chat_id]['players'].append(user)
             except BadRequest:
                 await update.message.reply_text("¡Parece que no has iniciado una conversación conmigo! Para unirte a un juego, primero debes hablarme. Pulsa aquí: " + context.bot.link)
         else:
@@ -165,7 +177,7 @@ async def unregisterplayer(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
 
         if user.id in grupos[chat_id]['players']:
-            grupos[chat_id]['players'].remove(user.id)
+            del grupos[chat_id]['players'][user.id]
             await context.bot.send_message(chat_id, f"El jugador {user.mention_html()} se ha quitado del juego", parse_mode=ParseMode.HTML)
         else:
             await update.message.reply_text("No estás registrado en el juego. Para registrarte escribe /regme")
@@ -178,9 +190,13 @@ async def start_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not grupos[chat_id]['game_running']:
         user = update.effective_user
 
-        adm = await context.bot.get_chat_member(chat_id, user.id)
+        # Bajo observación esto
+        # adm = await context.bot.get_chat_member(chat_id, user.id)
+        admins_ChatMember = await context.bot.get_chat_administrators(chat_id)
+        admins = [member.user for member in admins_ChatMember]
         
-        if adm.status == ChatMember.ADMINISTRATOR or user.id == 1954319524: # Si el usuario soy yo
+        if user in admins or user.id == 1954319524:
+        # if adm.status == ChatMember.ADMINISTRATOR or user.id == 1954319524: # Si el usuario soy yo
             grupos[chat_id]['game_running'] = True
             await inicializar_juego(context.bot, update.effective_chat)
         else:
@@ -207,14 +223,16 @@ async def inicializar_juego(bot: Bot, chat: Chat):
     # 'rondas': [],
     # 'game_running': False
 
-    imp_id = choice(juego['players'])
+    impostor = choice([juego['players'].keys()])
 
-    juego['impostor'] = imp_id
+    juego['impostor'] = impostor
 
     # await user_imp = bot.get_chat_member(chat.id, juego['impostor'])
-    logger.info(f"El impostor es el id {imp_id}")
+    logger.info(f"El impostor es {impostor.id}: {impostor.full_name}")
 
-    juego['vivos'] = juego['players'].copy()
+    # juego['players'].copy()
+    # [player_id for player_id in juego['players']]
+    juego['vivos'] = juego['players'].keys().copy()
 
     juego['palabra'] = elegir_palabra()
 
@@ -247,7 +265,11 @@ async def jugar_palabra(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Comando inválido, no se ha iniciado un juego.")
         return
 
-    await update.effective_message.delete()
+    try:
+        await update.effective_message.delete()
+    except BadRequest:
+        logger.info(f'No se puede eliminar el mensaje {update.effective_message.id}')
+
     user = update.effective_user
 
     if user.id in grupos[chat_id]['vivos']: # Si el usuario es uno de los jugadores activos
@@ -256,9 +278,9 @@ async def jugar_palabra(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif not user.id in grupos[chat_id]['jugadas']: # si el usuario que envió el mensaje no ha jugado todavía
             palabra = context.args[0]
             grupos[chat_id]['jugadas'][user.id] = palabra
-            await context.bot.send_message(chat_id, f"{user.mention_html()} dijo: '{palabra}'", parse_mode=ParseMode.HTML)
+            await context.bot.send_message(chat_id, f"La palabra de {user.mention_html()} es: '{palabra}'", parse_mode=ParseMode.HTML)
 
-            if palabra == grupos[chat_id]['palabra']:
+            if palabra == grupos[chat_id]['palabra'] and user.id == grupos[chat_id]['impostor']:
                 await desenlace(chat_id, context.bot, causas_victoria.IMPOSTOR_ACIERTA)
             else:
                 await revisar_fin_ronda(context, update.effective_chat)
@@ -273,7 +295,7 @@ async def jugar_palabra(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def revisar_fin_ronda(context: ContextTypes.DEFAULT_TYPE, chat: Chat):
     if len(grupos[chat.id]['vivos']) == len(grupos[chat.id]['jugadas'].keys()):
-        await context.bot.send_message(chat.id, "La ronda ha terminado. Los jugadores que quedan son:<br>" + await lista_jugadores_html(chat), parse_mode=ParseMode.HTML)
+        await context.bot.send_message(chat.id, "La ronda ha terminado. Los jugadores que quedan son:<br>" + lista_jugadores_html(chat), parse_mode=ParseMode.HTML)
 
         # registrar las palabras jugadas y limpiar el diccionario para la nueva ronda
         grupos[chat.id]['rondas'].append(grupos[chat.id]['jugadas'].copy())
@@ -283,7 +305,7 @@ async def revisar_fin_ronda(context: ContextTypes.DEFAULT_TYPE, chat: Chat):
         # jugadas.clear()
 
 async def enviar_votacion(context: ContextTypes.DEFAULT_TYPE, chat: Chat):
-    miembros = [await chat.get_member(id).user.first_name for id in grupos[chat.id]['vivos']]
+    miembros = [get_player(chat.id, id).first_name for id in grupos[chat.id]['vivos']]
     miembros.append('Paso')
 
     votacion = await context.bot.send_poll(
@@ -300,7 +322,7 @@ async def enviar_votacion(context: ContextTypes.DEFAULT_TYPE, chat: Chat):
             'message_id': votacion.id,
             'chat_id': chat.id,
             'candidatos': miembros,
-            # id votó por tal id
+            # id votó por tal id, -1 significa que no ha votado por ninguna
             'votos': {id: -1 for id in grupos[chat.id]['vivos']}
         }
     }
@@ -321,7 +343,7 @@ async def recibir_voto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lista_votos = respuesta.option_ids
     id_votante = respuesta.user.id
 
-    # En teoría lista_votos es una tupla, pero solo se permitirá un voto
+    # En teoría lista_votos es una tupla, pero solo se permitirá un voto, lista_votos[0]
     if len(lista_votos) > 0:
         # El ultimo valor de votacion['candidatos'] es 'Paso', su indice es len() - 1
         if lista_votos[0] != len(votacion['candidatos']) - 1:
@@ -352,17 +374,19 @@ async def check_encuesta_completa(chat: Chat, lista_votos: dict, context: Contex
         
         # Si acumula al menos la mitad de los votos, expulsarlo
         if mas_votado[1] > len(votos) / 2:
-            # chat = update.effective_chat
             grupos[chat.id]['vivos'].remove(mas_votado[0])
             await context.bot.send_message(
-                chat, f"Fin de la votación. El jugador {await chat.get_member(mas_votado[0]).mention_html()} ha sido expulsado del juego",
-                parse_mode=ParseMode.HTML
+                chat.id, f"Fin de la votación. El jugador {get_player(chat.id, mas_votado[0]).mention_html()} ha sido expulsado del juego", parse_mode=ParseMode.HTML
             )
 
             if mas_votado[0] == grupos[chat.id]['impostor']:
                 await desenlace(chat.id, context.bot, causas_victoria.IMPOSTOR_EXPULSADO)
             elif len(grupos[chat.id]['vivos']) < 3:
                 await desenlace(chat.id, context.bot, causas_victoria.MIN_JUGADORES)
+        else:
+            await context.bot.send_message(chat.id, "Fin de la ronda. No se ha elegido por mayoría ningún jugador en la votación: todos pasan a la siguiente ronda")
+        
+        # TODO: Hay que implementar algo para que se cierre la encuesta, o por lo menos para que nuevos votos no afecten la ronda en curso después de la votación
 
 
 
@@ -371,7 +395,8 @@ async def check_encuesta_completa(chat: Chat, lista_votos: dict, context: Contex
 # El impostor es expulsado - jugadores
 # Quedan dos jugadores en el juego y uno de ellos es el impostor - impostor
 async def desenlace(chat_id, bot: Bot, causa: causas_victoria):
-    impostor: User = bot.get_chat_member(chat_id, grupos[chat_id]['impostor'])
+    impostor: User = get_player(chat_id, grupos[chat_id]['impostor'])
+    # impostor: User = grupos[chat_id]['players'][] # bot.get_chat_member(chat_id, grupos[chat_id]['impostor'])
 
     match causa:
         case causas_victoria.IMPOSTOR_EXPULSADO:
@@ -381,7 +406,11 @@ async def desenlace(chat_id, bot: Bot, causa: causas_victoria):
         case causas_victoria.IMPOSTOR_ACIERTA:
             await bot.send_message(chat_id, f"{impostor.mention_html()} era el impostor y ha acertado la palabra '{grupos[chat_id]['palabra']}'! ¡Ha ganado! 🥳🥳🥳")
     
-    # Limpiar el diccionario del grupo
+    limpiar_juego_grupo(chat_id)
+
+
+def limpiar_juego_grupo(chat_id):
+    """Limpiar el diccionario del grupo"""
     juego = grupos[chat_id]
     juego['jugadas'].clear()
     juego['rondas'].clear()
@@ -391,17 +420,17 @@ async def desenlace(chat_id, bot: Bot, causa: causas_victoria):
     juego['game_running'] = False
 
 
-async def lista_jugadores_html(chat: Chat) -> str:
+def lista_jugadores_html(chat: Chat) -> str:
     # for :
     #     nombre_player = 
 
     #     if player not in grupos[chat.id]['vivos']:
     #         nombre_player = ''.join(['<del>', nombre_player,'</del>'])
-
+    
     return '<br>'.join([
-        await chat.get_member(player).full_name if player in grupos[chat.id]['vivos']
-        else '<del><i>' + await chat.get_member(player).full_name + '</i></del>'
-        for player in grupos[chat.id]['players']
+        player.first_name if player.id in grupos[chat.id]['vivos']
+        else '<del><i>' + player.first_name + '</i></del>'
+        for player in grupos[chat.id]['players'].values()
     ])
 
 async def listar_jugadores(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -414,7 +443,7 @@ async def listar_jugadores(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     chat = update.effective_chat
 
-    list_players = await lista_jugadores_html(chat)
+    list_players = lista_jugadores_html(chat)
     
     await context.bot.send_message(chat.id, "Los jugadores actualmente en la partida son:<br>" + list_players, parse_mode=ParseMode.HTML)
         
@@ -437,8 +466,9 @@ async def listar_rondas(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for jugada in ronda:
             # Cada diccionario mapea un id de usuario y la palabra que dijo
             lista_jugadores = 'Ronda: ' + str(num_ronda) + '<br>' + '<br>'.join([
-                await context.bot.get_chat_member(chat_id, player).full_name if player in grupos[chat_id]['vivos']
-                else '<del><i>' + await context.bot.get_chat_member(chat_id, player).full_name + '</i></del>'
+                get_player(chat_id, player).first_name + ": " + jugada[player]
+                if player.id in grupos[chat_id]['vivos']
+                else '<del><i>' + get_player(chat_id, player).first_name + ": " + jugada[player] + '</i></del>'
                 for player in jugada
             ])
 
@@ -446,6 +476,18 @@ async def listar_rondas(update: Update, context: ContextTypes.DEFAULT_TYPE):
             mensaje += lista_jugadores
     
     await context.bot.send_message(chat_id, "Las palabras jugadas hasta ahora han sido:<br>" + mensaje, parse_mode=ParseMode.HTML)
+
+
+async def stop_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    chat_id = update.effective_chat.id
+
+    admins_ChatMember = await context.bot.get_chat_administrators(chat_id)
+    admins = [member.user for member in admins_ChatMember]
+    
+    if user in admins or user.id == 1954319524: # De nuevo, el dev tiene privilegios :)
+        limpiar_juego_grupo(chat_id)
+        await update.effective_message.reply_text("Juego terminado por un administrador")
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.error("Error:", exc_info=context.error)
