@@ -224,7 +224,7 @@ async def inicializar_juego(bot: Bot, chat: Chat):
     # 'rondas': [],
     # 'game_running': False
 
-    impostor = choice([juego['players'].keys()])
+    impostor = choice(list(juego['players']))
 
     juego['impostor'] = impostor
 
@@ -253,7 +253,7 @@ async def inicializar_juego(bot: Bot, chat: Chat):
 async def susurrar_palabras(chat_id, bot: Bot, palabra):
     for player in grupos[chat_id]['players']:
         if not player == grupos[chat_id]['impostor']:
-            await bot.send_message(player, "La palabra es " + palabra)
+            await bot.send_message(player, "La palabra es: '" + palabra + "'")
         else:
             await bot.send_message(player, "¡Eres el impostor!")
 
@@ -428,11 +428,15 @@ def lista_jugadores_html(chat: Chat) -> str:
     #     if player not in grupos[chat.id]['vivos']:
     #         nombre_player = ''.join(['<del>', nombre_player,'</del>'])
     
-    return '<br>'.join([
+    retorno = '<br>'.join([
         player.first_name if player.id in grupos[chat.id]['vivos']
         else '<del><i>' + player.first_name + '</i></del>'
         for player in grupos[chat.id]['players'].values()
     ])
+
+    logger.info("lista_jugadores_html: " + retorno)
+
+    return retorno
 
 async def listar_jugadores(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f'Enviado el comando /jugadores en el chat {update.effective_chat.id}')
