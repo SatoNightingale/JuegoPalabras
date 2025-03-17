@@ -364,12 +364,14 @@ async def recibir_voto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else: # Si el usuario retractó su voto, entonces la lista_votos está vacía
         votacion['votos'][id_votante] = -1
 
+    logger.info("A punto de checkear")
     votacion['open'] = await check_encuesta_completa(chat_id, votacion['votos'], context)
     
     context.bot_data.update(votacion)
 
 async def check_encuesta_completa(chat_id, lista_votos: dict, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    print((lista_votos.values()))
+    # print()
+    logger.info(str(lista_votos.values()))
     if -1 in list(lista_votos.values()):
         return False
     else:
