@@ -87,7 +87,7 @@ def main():
 
     port = os.environ.get('PORT')
 
-    print(port)
+    print("Puerto: ", port)
 
     bot.run_webhook(
         listen='0.0.0.0',
@@ -233,7 +233,7 @@ async def inicializar_juego(bot: Bot, chat: Chat):
 
     # juego['players'].copy()
     # [player_id for player_id in juego['players']]
-    juego['vivos'] = [juego['players'].keys()].copy()
+    juego['vivos'] = list(juego['players'].keys())
 
     juego['palabra'] = elegir_palabra()
 
