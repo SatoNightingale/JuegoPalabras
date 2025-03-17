@@ -164,7 +164,7 @@ async def registerplayer(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await context.bot.send_message(user.id, f"Has sido registrado para jugar El juego de las palabras en el grupo {update.effective_chat.mention_html()}", parse_mode=ParseMode.HTML)
                 await context.bot.send_message(chat_id, f"{user.mention_html()} ha sido registrado para jugar El juego de las palabras", parse_mode=ParseMode.HTML)
 
-                grupos[chat_id]['players'].append(user)
+                grupos[chat_id]['players'][user.id] = user
             except BadRequest:
                 await update.message.reply_text("¡Parece que no has iniciado una conversación conmigo! Para unirte a un juego, primero debes hablarme. Pulsa aquí: " + context.bot.link)
         else:
@@ -229,11 +229,11 @@ async def inicializar_juego(bot: Bot, chat: Chat):
     juego['impostor'] = impostor
 
     # await user_imp = bot.get_chat_member(chat.id, juego['impostor'])
-    logger.info(f"El impostor es {impostor.id}: {impostor.full_name}")
+    logger.info(f"El impostor es {impostor}")
 
     # juego['players'].copy()
     # [player_id for player_id in juego['players']]
-    juego['vivos'] = juego['players'].keys().copy()
+    juego['vivos'] = [juego['players'].keys()].copy()
 
     juego['palabra'] = elegir_palabra()
 
